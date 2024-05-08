@@ -1,0 +1,4 @@
+*.docx
+*.zip
+myenv/
+myenv/bin/python3.10
