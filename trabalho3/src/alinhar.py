@@ -2,6 +2,7 @@ import sys
 
 import numpy as np
 import cv2
+import skimage
 from matplotlib import pyplot as plt
 
 class Image:
@@ -9,10 +10,18 @@ class Image:
     self.image = None
     
   def read(self, image_path):
-    self.image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    self.image = skimage.io.imread(fname=image_path, as_gray=True)
     
+  def rotate_image(self, angle):
+    return skimage.transform.rotate(self.image, angle, mode="edge", cval=1)
+  
+  def show(self):
+    skimage.io.imshow(self.image)  
+  
   def save(self, save_path):
-    cv2.imwrite(save_path, self.image)
+    ubyte_image = skimage.img_as_ubyte(self.image)
+
+    skimage.io.imsave(fname=save_path, arr=ubyte_image)
     
 class Horizontal:
   def __init__(self, F: Image, theta1, theta2, theta_step) -> None:
@@ -28,7 +37,7 @@ class Horizontal:
   def detect_inclination(self):    
     self.profile = np.sum(self.F.image, axis=1)
     
-    for theta in range(self.theta1, self.theta2, self.theta_step):
+    for theta in range(self.theta1, self.theta2 + 1, self.theta_step):
       self.values[theta] = self.aim_func(theta)
       
     thetaM = max(self.values, key=self.values.get)
@@ -36,17 +45,9 @@ class Horizontal:
     return thetaM
   
   def rotate(self, theta):
-    theta_rad = np.deg2rad(theta)
+    rotate = self.F.rotate_image(theta)
     
-    original_index = np.arange(self.n)
-    
-    rotate_index = np.round(original_index * np.cos(theta_rad)).astype(int)
-    
-    rotate_index = np.clip(rotate_index, 0, self.n - 1)
-    
-    rotate_profile = self.profile[rotate_index]
-    
-    return rotate_profile
+    return np.sum(rotate, axis=1)
   
   def calc_variance(self, profile):
     return np.std(profile) ** 2
@@ -63,13 +64,19 @@ def main():
   
   image = Image()
   
-  image.read('./src/files/input/neg_4.png')
+  image.read('./src/files/input/sample2.png')
   
-  horizontal = Horizontal(F=image, theta1=0, theta2=360, theta_step=1)
+  horizontal = Horizontal(F=image, theta1=-180, theta2=180, theta_step=1)
   
-  print(horizontal.detect_inclination())
+  angle = horizontal.detect_inclination()
   
-  image.save('./src/files/output/neg_4.png')
+  print(f"Ângulo de correção: {angle}")
+  
+  image.image = image.rotate_image(angle)
+  
+  image.show()
+  
+  image.save('./src/files/output/sample2.png')
     
     
 main()
