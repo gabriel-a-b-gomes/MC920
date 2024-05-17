@@ -1,22 +1,32 @@
-import sys
-
 import numpy as np
-import cv2
 import skimage
+from skimage.feature import canny
+from skimage.transform import hough_line, hough_line_peaks, rotate
+
 from matplotlib import pyplot as plt
+
+import sys
 
 class Image:
   def __init__(self) -> None:
     self.image = None
+    self.rows = 0
+    self.cols = 0
     
   def read(self, image_path):
+    print("Iniciando leitura da imagem...", end=" ")
+    
     self.image = skimage.io.imread(fname=image_path, as_gray=True)
+    self.rows, self.cols = self.image.shape
+    
+    print("Processo Finalizado")
     
   def rotate_image(self, angle):
-    return skimage.transform.rotate(self.image, angle, mode="edge", cval=1)
+    return rotate(self.image, angle, mode="constant", cval=0)
   
   def show(self):
     skimage.io.imshow(self.image)  
+    plt.show()
   
   def save(self, save_path):
     ubyte_image = skimage.img_as_ubyte(self.image)
@@ -34,49 +44,93 @@ class Horizontal:
     self.theta2 = theta2
     self.theta_step = theta_step
     
-  def detect_inclination(self):    
-    self.profile = np.sum(self.F.image, axis=1)
+  def detect_inclination(self):   
+    print("Iniciando decteção de inclinação da imagem com o método horizontal...", end=" ") 
     
-    for theta in range(self.theta1, self.theta2 + 1, self.theta_step):
+    theta = self.theta1
+    
+    while theta <= self.theta2:
       self.values[theta] = self.aim_func(theta)
-      
-    thetaM = max(self.values, key=self.values.get)
+      theta += self.theta_step
     
-    return thetaM
+    angle = max(self.values, key=self.values.get)
+    
+    print("Processo Finalizado")
+    
+    return angle
   
   def rotate(self, theta):
     rotate = self.F.rotate_image(theta)
     
     return np.sum(rotate, axis=1)
   
-  def calc_variance(self, profile):
-    return np.std(profile) ** 2
+  def calc_square_diff(self, profile):
+    diff = np.diff(profile)  # Compute the difference between neighbors
+    squared_diff = diff ** 2  # Square the differences
+    return np.sum(squared_diff)  # Sum the squared differences
     
   def aim_func(self, theta):
     rotate_profile = self.rotate(theta)
+    return self.calc_square_diff(rotate_profile)
+  
+class Hough:
+  def __init__(self, F: Image, threshold) -> None:
+    self.F = F
+    self.threshold = threshold
+  
+  def detect_inclination(self):
+    print("Iniciando decteção de inclinação da imagem com o método de Hough...", end=" ") 
     
-    return self.calc_variance(rotate_profile)
+    edges = canny(self.F.image, sigma=2)
+    
+    h, theta, d = hough_line(edges)
+    
+    _, angles, _ = hough_line_peaks(h, theta, d, threshold=self.threshold)
+    
+    angles_deg = np.rad2deg(angles)
+    
+    median_angle = round(np.median(angles_deg) - 90)
+    
+    if abs(median_angle) > 90:
+      median_angle = 180 + median_angle if median_angle < 0 else median_angle - 180
+    
+    print("Processo Finalizado")
+    
+    return median_angle
 
 def main():
-  # if len(sys.argv) != 4:
-  #   print("Usage: python alinhar.py <imagem_entraga.png> <modo> <imagem_saida.png>")
-  # else:
-  
-  image = Image()
-  
-  image.read('./src/files/input/sample2.png')
-  
-  horizontal = Horizontal(F=image, theta1=-180, theta2=180, theta_step=1)
-  
-  angle = horizontal.detect_inclination()
-  
-  print(f"Ângulo de correção: {angle}")
-  
-  image.image = image.rotate_image(angle)
-  
-  image.show()
-  
-  image.save('./src/files/output/sample2.png')
+  if len(sys.argv) != 4:
+    print("Usage: python alinhar.py <imagem_entraga.png> <modo> <imagem_saida.png>")
+  else:
+    angle = 0
+    
+    input_path = sys.argv[1]
+    mode = sys.argv[2].lower()
+    output_path = sys.argv[3]
+    
+    image = Image()
+    
+    image.read(input_path)
+    
+    if mode == "hl" or mode == "horizontal":
+      
+      horizontal = Horizontal(F=image, theta1=-90, theta2=90, theta_step=1)
+      
+      angle = horizontal.detect_inclination()
+      
+    elif mode == "hg" or mode == "hough":
+      
+      hough = Hough(F=image, threshold=(image.cols * 0.3))
+      
+      angle = hough.detect_inclination()
+    
+    print(f"Resultado obtido: Ângulo de correção de {angle} graus")
+    
+    image.image = image.rotate_image(angle)
+    
+    image.show()
+    
+    image.save(output_path)
     
     
 main()
