@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt
 
 import sys
 
+import time
+
 class Image:
   def __init__(self) -> None:
     self.image = None
@@ -22,7 +24,15 @@ class Image:
     print("Processo Finalizado")
     
   def rotate_image(self, angle):
-    return rotate(self.image, angle, mode="constant", cval=0)
+    return rotate(self.image, angle, resize=True, mode="constant", cval=0)
+  
+  def normalize_rotate_angle(self, angle):
+    new_angle = angle
+    
+    if abs(angle) > 90:
+      new_angle = 180 + angle if angle < 0 else angle - 180
+      
+    return new_angle
   
   def show(self):
     skimage.io.imshow(self.image)  
@@ -44,21 +54,25 @@ class Horizontal:
     self.theta2 = theta2
     self.theta_step = theta_step
     
-  def detect_inclination(self):   
-    print("Iniciando decteção de inclinação da imagem com o método horizontal...", end=" ") 
-    
-    theta = self.theta1
-    
-    while theta <= self.theta2:
-      self.values[theta] = self.aim_func(theta)
-      theta += self.theta_step
-    
-    angle = max(self.values, key=self.values.get)
-    
-    print("Processo Finalizado")
-    
-    return angle
-  
+  def detect_inclination(self):  
+    try:  
+      print("Iniciando decteção de inclinação da imagem com o método horizontal...", end=" ") 
+      
+      theta = self.theta1
+      
+      while theta <= self.theta2:
+        self.values[theta] = self.aim_func(theta)
+        theta += self.theta_step
+      
+      angle = max(self.values, key=self.values.get)
+      
+      print("Processo Finalizado")
+      
+      return angle
+    except Exception as error:
+      print("ERRO! Mensagem: " + error) 
+      return 0
+
   def rotate(self, theta):
     rotate = self.F.rotate_image(theta)
     
@@ -79,29 +93,32 @@ class Hough:
     self.threshold = threshold
   
   def detect_inclination(self):
-    print("Iniciando decteção de inclinação da imagem com o método de Hough...", end=" ") 
-    
-    edges = canny(self.F.image, sigma=2)
-    
-    h, theta, d = hough_line(edges)
-    
-    _, angles, _ = hough_line_peaks(h, theta, d, threshold=self.threshold)
-    
-    angles_deg = np.rad2deg(angles)
-    
-    median_angle = round(np.median(angles_deg) - 90)
-    
-    if abs(median_angle) > 90:
-      median_angle = 180 + median_angle if median_angle < 0 else median_angle - 180
-    
-    print("Processo Finalizado")
-    
-    return median_angle
+    try:
+      print("Iniciando decteção de inclinação da imagem com o método de Hough...", end=" ") 
+      
+      edges = canny(self.F.image, sigma=2)
+      
+      h, theta, d = hough_line(edges)
+      
+      _, angles, _ = hough_line_peaks(h, theta, d, threshold=self.threshold)
+      
+      angles_deg = np.rad2deg(angles)
+      
+      median_angle = round(np.median(angles_deg) - 90)
+      
+      print("Processo Finalizado")
+      
+      return median_angle
+    except Exception as error:
+      print(f"ERRO! Mensagem: {error}") 
+      return 0
 
 def main():
   if len(sys.argv) != 4:
     print("Usage: python alinhar.py <imagem_entraga.png> <modo> <imagem_saida.png>")
   else:
+    init_time = time.time()
+    
     angle = 0
     
     input_path = sys.argv[1]
@@ -114,7 +131,7 @@ def main():
     
     if mode == "hl" or mode == "horizontal":
       
-      horizontal = Horizontal(F=image, theta1=-90, theta2=90, theta_step=1)
+      horizontal = Horizontal(F=image, theta1=-180, theta2=180, theta_step=1)
       
       angle = horizontal.detect_inclination()
       
@@ -123,14 +140,24 @@ def main():
       hough = Hough(F=image, threshold=(image.cols * 0.3))
       
       angle = hough.detect_inclination()
+      
+    else:
+      print("Operação desconhecida. As operações válidas são horizontal ou hl ou hough ou hg")
+      
+      return
+    
+    angle = image.normalize_rotate_angle(angle)
     
     print(f"Resultado obtido: Ângulo de correção de {angle} graus")
     
     image.image = image.rotate_image(angle)
     
+    end_time = time.time()
+    
     image.show()
     
     image.save(output_path)
     
+    print(f"Feito em {((end_time - init_time) * 1000) // 1} ms.")
     
 main()
