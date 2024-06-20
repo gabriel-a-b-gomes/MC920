@@ -24,17 +24,6 @@ class Image:
     if farray is not None:
       self.__get_dimensions()
     
-  def __dx(self, x_line):
-    return x_line - np.floor(x_line)
-    
-  def __dy(self, y_line):
-    return y_line - np.floor(y_line)
-  
-  def __near_point(self, x_line, y_line):
-    x = round(x_line)
-    y = round(y_line)
-    
-    return x, y
     
   def __get_dimensions(self):
     shape = self.image.shape
@@ -53,50 +42,40 @@ class Image:
   def padding(self, pad):
     return np.pad(self.image, pad, mode="edge")
   
-  def __scale_with_nearest_neighbour(self, factor, dimension):
-    new_dimension = dimension
+  def __near_point(self, x_line, y_line):
+    x = np.round(x_line)
+    y = np.round(y_line)
     
-    if len(self.image.shape) > 2:
-      new_dimension = (dimension[0], dimension[1], self.image.shape[2])
-    
-    scaled_image = np.zeros(new_dimension, dtype="uint8")
-    
-    for r in range(new_dimension[0]):
-      for c in range(new_dimension[1]):
-        x_line = r / factor
-        y_line = c / factor
-        
-        try:
-          x, y = self.__near_point(x_line, y_line)
-          scaled_image[r, c] = self.image[x, y]
-        except:
-          scaled_image[r, c] = 0
-    
-    return scaled_image
+    return x, y
   
-  def __scale_with_bilinear(self, f_img, factor, dimension):
-    new_dimension = dimension
+  def __scale_with_nearest_neighbour(self, row, col, factor_row, factor_col):
+    x_line = row / factor_row
+    y_line = col / factor_col
     
-    if len(self.image.shape) > 2:
-      new_dimension = (dimension[0], dimension[1], self.image.shape[2])
+    try:
+      x, y = self.__near_point(x_line, y_line)
+      return self.image[x, y]
+    except:
+      return 0
+  
+  def __dx(self, x_line):
+    return x_line - np.floor(x_line)
     
-    scaled_image = np.zeros(new_dimension, dtype="uint8")
+  def __dy(self, y_line):
+    return y_line - np.floor(y_line)
+  
+  def __scale_with_bilinear(self, row, col, factor_row, factor_col):
+    x_line = row / factor_row
+    y_line = col / factor_col
     
-    for r in range(new_dimension[0]):
-      for c in range(new_dimension[1]):
-        x_line = (r + 1) / factor
-        y_line = (c + 1) / factor
-        
-        dx = self.__dx(x_line)
-        dy = self.__dy(y_line)
-        x, y = self.__near_point(x_line, y_line)
-        
-        try:
-          scaled_image[r, c] = (1 - dx) * (1 - dy) * f_img[x, y] + dx * (1 - dy) * f_img[x + 1, y] + (1 - dx) * dy * f_img[x, y + 1] + dx * dy * f_img[x + 1, y + 1]
-        except:
-          scaled_image[r, c] = 0
-        
-    return scaled_image
+    dx = self.__dx(x_line)
+    dy = self.__dy(y_line)
+    x, y = self.__near_point(x_line, y_line)
+    
+    try:
+      return (1 - dx) * (1 - dy) * self.image[x, y] + dx * (1 - dy) * self.image[x + 1, y] + (1 - dx) * dy * self.image[x, y + 1] + dx * dy * self.image[x + 1, y + 1]
+    except:
+      return 0
   
   def __P(self, t):
     return t if t > 0 else 0
@@ -104,61 +83,53 @@ class Image:
   def __R(self, s):
     return (1 / 6) * (self.__P(s + 2) ** 3 - 4 * self.__P(s + 1) ** 3 + 6 * self.__P(s) ** 3 - 4 * self.__P(s - 1) ** 3)
   
-  def __scale_with_bicubic(self, f_img, factor, dimension):
-    new_dimension = dimension
+  def __scale_with_bicubic(self, row, col, factor_row, factor_col):
+    x_line = row / factor_row
+    y_line = col / factor_col
     
-    if len(self.image.shape) > 2:
-      new_dimension = (dimension[0], dimension[1], self.image.shape[2])
+    dx = self.__dx(x_line)
+    dy = self.__dy(y_line)
+    x, y = self.__near_point(x_line, y_line)
     
-    scaled_image = np.zeros(new_dimension, dtype="uint8")
+    point = 0
     
-    for r in range(new_dimension[0]):
-      for c in range(new_dimension[1]):
-        x_line = (r + 2) / factor
-        y_line = (c + 2) / factor
-        
-        dx = self.__dx(x_line)
-        dy = self.__dy(y_line)
-        x, y = self.__near_point(x_line, y_line)
-        
-        try:
-          for m in range(-1, 3):
-            for n in range(-1, 3):
-              scaled_image[r, c] += f_img[x + m, y + n] * self.__R(m - dx) * self.__R(dy - n)
-        except:
-          scaled_image[r, c] = 0
-          
-    return scaled_image
+    try:
+      for m in range(-1, 3):
+        for n in range(-1, 3):
+          point += self.image[x + m, y + n] * self.__R(m - dx) * self.__R(dy - n)
+      
+      return point
+    except:
+      return 0
   
   def __L(self, f_img, dx, x, y, n):
-    return (-dx * (dx - 1) * (dx - 2) * f_img[x - 1, y + n - 2]) / 6 + ((dx + 1) * (dx - 1) * (dx - 2) * f_img[x, y + n - 2]) / 2 + (-dx * (dx + 1) * (dx - 2) * f_img[x + 1, y + n - 2]) / 2 + (dx * (dx + 1) * (dx - 1) * f_img[x + 2, y + n - 2]) / 6
+    l1 = (-dx * (dx - 1) * (dx - 2) * f_img[x - 1, y + n - 2]) / 6
+    l2 = ((dx + 1) * (dx - 1) * (dx - 2) * f_img[x, y + n - 2]) / 2
+    l3 = (-dx * (dx + 1) * (dx - 2) * f_img[x + 1, y + n - 2]) / 2
+    l4 = (dx * (dx + 1) * (dx - 1) * f_img[x + 2, y + n - 2]) / 6
+    
+    return l1 + l2 + l3 + l4
   
-  def __scale_with_lagrange(self, f_img, factor, dimension):
-    new_dimension = dimension
+  def __scale_with_lagrange(self, row, col, factor_row, factor_col):
+    x_line = row / factor_row
+    y_line = col / factor_col
     
-    if len(self.image.shape) > 2:
-      new_dimension = (dimension[0], dimension[1], self.image.shape[2])
+    dx = self.__dx(x_line)
+    dy = self.__dy(y_line)
+    x, y = self.__near_point(x_line, y_line)
     
-    scaled_image = np.zeros(new_dimension, dtype="uint8")
-    
-    for r in range(new_dimension[0]):
-      for c in range(new_dimension[1]):
-        x_line = (r + 2) / factor
-        y_line = (c + 2) / factor
-        
-        dx = self.__dx(x_line)
-        dy = self.__dy(y_line)
-        x, y = self.__near_point(x_line, y_line)
-        
-        try:
-          scaled_image[r, c] = (-dy * (dy - 1) * (dy - 2) * self.__L(f_img, dx, x, y, 1)) / 6 + ((dy + 1) * (dy - 1) * (dy - 2) * self.__L(f_img, dx, x, y, 2)) / 2 + (-dy * (dy + 1) * (dy - 2) * self.__L(f_img, dx, x, y, 3)) / 2 + (dy * (dy + 1) * (dy - 1) * self.__L(f_img, dx, x, y, 4)) / 6
-        except:
-          scaled_image[r, c] = 0
-          
-    return scaled_image
+    try:
+      a1 = (-dy * (dy - 1) * (dy - 2) * self.__L(self.image, dx, x, y, 1)) / 6
+      a2 = ((dy + 1) * (dy - 1) * (dy - 2) * self.__L(self.image, dx, x, y, 2)) / 2
+      a3 = (-dy * (dy + 1) * (dy - 2) * self.__L(self.image, dx, x, y, 3)) / 2
+      a4 = (dy * (dy + 1) * (dy - 1) * self.__L(self.image, dx, x, y, 4)) / 6
+      
+      return a1 + a2 + a3 + a4
+    except:
+      return 0
   
-  def scale(self, factor, method, dimension):
-    if factor == 0: raise ZeroDivisionError("Fator de escala não pode ser 0")
+  def scale(self, factor_row, factor_col, method):
+    if factor_col == 0 or factor_row == 0: raise ZeroDivisionError("Fator de escala não pode ser 0")
     
     print(f"Realizando escala da imagem por {method.name}...", end=" ")
     
@@ -166,19 +137,26 @@ class Image:
     
     scaled_image = None
     
+    new_rows = round(self.rows * factor_row)
+    new_cols = round(self.cols * factor_col)
+    
+    scaled_image = np.zeros((new_rows, new_cols), dtype=np.uint8)
+    
+    scale_method = None
     if method == ScalingMethod.NEAREST_NEIGHBOR:
-      scaled_image = self.__scale_with_nearest_neighbour(factor=factor, dimension=dimension)
+      scale_method = self.__scale_with_nearest_neighbour
     elif method == ScalingMethod.BILINEAR:
-      image_padding = self.padding(pad=1)
-      scaled_image = self.__scale_with_bilinear(f_img=image_padding, factor=factor, dimension=dimension)
+      scale_method = self.__scale_with_bilinear
     elif method == ScalingMethod.BICUBIC:
-      image_padding = self.padding(pad=2)
-      scaled_image = self.__scale_with_bicubic(f_img=image_padding, factor=factor, dimension=dimension)
+      scale_method = self.__scale_with_bicubic
     elif method == ScalingMethod.LAGRANGE:
-      image_padding = self.padding(pad=2)
-      scaled_image = self.__scale_with_lagrange(f_img=image_padding, factor=factor, dimension=dimension)
+      scale_method = self.__scale_with_lagrange
     else:
       raise ValueError("Opção de método inválido")
+    
+    for r in range(new_rows):
+      for c in range(new_cols):
+        scaled_image[r, c] = scale_method(row=r, col=c, factor_row=factor_row, factor_col=factor_col)
         
     end_time = time.time()
     
@@ -226,6 +204,7 @@ class Image:
   
   def save(self, save_path):
     skimage.io.imsave(fname=save_path, arr=self.image)
+
 
 def select_scale_option(method):
   if method == "nearest":
@@ -280,9 +259,17 @@ def main():
     image.show(f"Imagem após rotação de {args.angulo} graus")
     
   if args.escala:
-    image = image.scale(args.escala, scale_option, (new_rows, new_cols))
+    image = image.scale(args.escala, args.escala, scale_option)
     
     image.show(f"Imagem após escala de fator {args.escala}")
+    
+  if args.dimensao:
+    new_rows = args.dimensao[0]
+    new_cols = args.dimensao[1]
+    
+    image = image.scale(factor_row=(new_rows/image.rows), factor_col=(new_cols/image.cols), method=scale_option)
+    
+    image.show(f"Imagem após redimensionamento {new_rows}x{new_cols}")
   
   image.save(args.output)
   

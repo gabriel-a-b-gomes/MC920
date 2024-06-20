@@ -9,24 +9,45 @@ class Image:
     self.image = None
     
   def read_image(self, path):
-    self.image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    self.image = cv2.imread(path, flags=cv2.IMREAD_COLOR)
   
   def save_image(self, path):
-    cv2.imwrite(path, self.image)
+    cv2.imwrite(path, self.image, flags=cv2.IMWRITE_JPEG_OPTIMIZE)
     
 class LinkingImages:
   def __init__(self, img1: Image, img2: Image) -> None:
-    self.img1 = img1
-    self.img2 = img2
+    self.img1 = Image()
     
-  def __find_descriptors(self, img: Image, method="SURF"):
-    detector = cv2.xfeatures2d.SIFT_create()
+    self.img1.image = cv2.cvtColor(img1.image, cv2.COLOR_RGB2GRAY)
     
-    return detector.detectAndCompute(img.image, None)
+    self.img2 = Image()
+    
+    self.img2.image = cv2.cvtColor(img2.image, cv2.COLOR_RGB2GRAY)
+    
+  def __find_descriptors(self, img: Image, method="SIFT"):
+    if method == "SIFT":
+      detector = cv2.xfeatures2d.SIFT_create()
+      
+      return detector.detectAndCompute(img.image, None)
+    
+    if method == "BRIEF":
+      fast = cv2.FastFeatureDetector_create() 
+      brief = cv2.xfeatures2d.BriefDescriptorExtractor_create()
+
+      keypoints = fast.detect(img.image, None)
+
+      return brief.compute(img.image, keypoints)
+    
+    if method == "ORB":
+      orb = cv2.ORB_create()
+      
+      keypoints = orb.detect(img.image, None)
+      
+      return orb.compute(img.image, keypoints)
     
   def compute_descriptors(self, method):
-    self.keypoint1, self.desc1 = self.__find_descriptors(self.img1)
-    self.keypoint2, self.desc2 = self.__find_descriptors(self.img2)
+    self.keypoint1, self.desc1 = self.__find_descriptors(self.img1, method=method)
+    self.keypoint2, self.desc2 = self.__find_descriptors(self.img2, method=method)
 
   def choose_best_match(self):
     bf = cv2.BFMatcher(cv2.NORM_L1, crossCheck=False)
@@ -47,23 +68,38 @@ class LinkingImages:
     return cv2.warpPerspective(image, self.H, shape)  
   
   def draw_matches(self):
-    return cv2.drawMatches(self.img1.image, self.keypoint1, self.img2.image, self.keypoint2, self.matches, None, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
-
-    # # Display the result (or save the result image as needed)
-    # cv2.imshow('Matches', result)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+    return cv2.drawMatches(
+      self.img1.image, 
+      self.keypoint1, 
+      self.img2.image, 
+      self.keypoint2, 
+      self.matches, 
+      None, 
+      flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS
+    )
 
 def main():
   img1 = Image()
-  img1.read_image("./files/inputs/foto5A.jpg")
+  img1.read_image("./files/inputs/foto2A.jpg")
   
   img2 = Image()
-  img2.read_image("./files/inputs/foto5B.jpg")
+  img2.read_image("./files/inputs/foto2B.jpg")
+  
+  plt.figure(figsize=(15, 10))
+  plt.imshow(img1.image)
+  plt.title('Imagem 1')
+  plt.axis('off')
+  plt.show()
+  
+  plt.figure(figsize=(15, 10))
+  plt.imshow(img2.image)
+  plt.title('Imagem 2')
+  plt.axis('off')
+  plt.show()
   
   linkImage = LinkingImages(img1, img2)
   
-  linkImage.compute_descriptors(method="SURF")
+  linkImage.compute_descriptors(method="ORB")
   
   linkImage.choose_best_match()
   
@@ -74,7 +110,7 @@ def main():
   
   result = linkImage.warp_perspective(image=img1.image, shape=(width, height))
   
-  r2, c2 = img2.image.shape
+  r2, c2 = img2.image.shape[:2]
   
   result[0:r2, 0:c2] = img2.image
   
